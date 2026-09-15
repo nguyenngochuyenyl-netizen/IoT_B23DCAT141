@@ -1,0 +1,57 @@
+const API='http://localhost:3000/api';
+const state={light:false,fan:false,air:false,history:[],sensor:[],sensorPage:1,historyPage:1,pageSize:9,chart:[]};
+const pages={dashboard:['Dashboard','Giám sát môi trường và điều khiển thiết bị phòng học theo thời gian thực.'],sensor:['Data Sensor','Tra cứu dữ liệu cảm biến theo thời gian thực và lịch sử.'],history:['Action History','Lịch sử điều khiển thiết bị trong phòng học.'],profile:['Profile','Thông tin sinh viên thực hiện và liên kết tài liệu dự án.']};
+
+document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active-page'));document.getElementById(b.dataset.page).classList.add('active-page');document.getElementById('page-title').textContent=pages[b.dataset.page][0];document.getElementById('page-desc').textContent=pages[b.dataset.page][1];});
+function clock(){const d=new Date();document.getElementById('clock').textContent='Hanoi, '+d.toLocaleTimeString('vi-VN')+' — '+d.toLocaleDateString('vi-VN')}setInterval(clock,1000);clock();
+async function get(path){const r=await fetch(API+path);if(!r.ok)throw new Error('API '+r.status);return r.json()}
+function fmtDate(value){if(!value)return '--';const d=new Date(value);return isNaN(d)?String(value):d.toLocaleTimeString('vi-VN')+' - '+d.toLocaleDateString('vi-VN')}
+function statusTemp(v){return v==null?'--':v<18?'THẤP':v>35?'CAO':'ỔN ĐỊNH'}
+function statusHum(v){return v==null?'--':v<35?'THẤP':v>70?'CAO':'ỔN ĐỊNH'}
+function statusLight(v){return v==null?'--':v<300?'ÁNH SÁNG YẾU':v<=500?'TRUNG BÌNH':'TỐT'}
+function setState(id,text,kind=''){const e=document.getElementById(id);e.textContent=text;e.className=kind}
+function saveSnapshot(d){const snap={temperature:d.temperature,humidity:d.humidity,light:d.light,recordedAt:d.updatedAt||new Date().toISOString()};state.sensor.unshift({type:'Nhiệt độ',value:Number(d.temperature).toFixed(1)+' °C',status:'Hoạt động',recordedAt:snap.recordedAt});state.sensor.unshift({type:'Độ ẩm',value:Number(d.humidity).toFixed(1)+'%',status:'Hoạt động',recordedAt:snap.recordedAt});state.sensor.unshift({type:'Ánh sáng',value:d.light+' lux',status:'Hoạt động',recordedAt:snap.recordedAt});state.sensor=state.sensor.slice(0,300);localStorage.setItem('iotSensorHistory',JSON.stringify(state.sensor));}
+function loadSaved(){try{state.sensor=JSON.parse(localStorage.getItem('iotSensorHistory')||'[]');state.chart=JSON.parse(localStorage.getItem('iotChart')||'[]')}catch{state.sensor=[];state.chart=[]}}
+async function loadSensors(){try{const d=await get('/sensor-data/latest');if(d.temperature!=null){document.getElementById('temperature').textContent=Number(d.temperature).toFixed(1);setState('temp-state',statusTemp(d.temperature));}if(d.humidity!=null){document.getElementById('humidity').textContent=Number(d.humidity).toFixed(1);setState('humidity-state',statusHum(d.humidity),'warning');}if(d.light!=null){document.getElementById('light').textContent=d.light;setState('light-state',statusLight(d.light));}
+const last=state.chart[state.chart.length-1];if(!last||Date.now()-new Date(last.recordedAt).getTime()>=2000){state.chart.push({temperature:d.temperature,humidity:d.humidity,light:d.light,recordedAt:d.updatedAt||new Date().toISOString()});state.chart=state.chart.slice(-8);localStorage.setItem('iotChart',JSON.stringify(state.chart));saveSnapshot(d);renderSensorTable();}renderChart();}catch(e){console.log(e)}}
+async function loadDevices(){try{const d=await get('/device-status');Object.assign(state,d);['light','fan','air'].forEach(x=>{document.getElementById(x+'-switch').classList.toggle('on',!!state[x]);document.getElementById(x+'-control-label').textContent=state[x]?'Đang bật':'Đang tắt'})}catch(e){console.log(e)}}
+async function toggleDevice(device){const next=!state[device];try{const r=await fetch(`${API}/device/${device}/${next?'on':'off'}`,{method:'POST'});if(!r.ok)throw Error();state[device]=next;loadDevices();loadHistory()}catch(e){alert('Không thể điều khiển thiết bị')}}
+['light','fan','air'].forEach(x=>document.getElementById(x+'-switch').onclick=()=>toggleDevice(x));
+async function loadHistory(){try{state.history=await get('/action-history');renderHistory()}catch(e){console.log(e)}}
+function renderSensorTable(){const filter=document.getElementById('sensor-filter').value,query=document.getElementById('sensor-search').value.toLowerCase(),date=document.getElementById('sensor-date').value;let rows=state.sensor.filter(x=>(filter==='all'||x.type===filter)&&(!query||x.type.toLowerCase().includes(query)||x.value.toLowerCase().includes(query)||fmtDate(x.recordedAt).toLowerCase().includes(query))&&(!date||String(x.recordedAt).slice(0,10)===date));const total=rows.length,pages=Math.max(1,Math.ceil(total/state.pageSize));state.sensorPage=Math.min(state.sensorPage,pages);const start=(state.sensorPage-1)*state.pageSize;rows=rows.slice(start,start+state.pageSize);document.getElementById('sensor-body').innerHTML=rows.map((x,i)=>`<tr><td>${start+i+1}</td><td>${x.type}</td><td>${x.value}</td><td>${x.status||'Hoạt động'}</td><td>${fmtDate(x.recordedAt)}</td></tr>`).join('')||'<tr><td colspan="5">Không có dữ liệu phù hợp</td></tr>';document.getElementById('sensor-count').textContent=`Hiển thị ${rows.length} trên ${total} kết quả`;renderPager('sensor',pages)}
+function renderHistory(){const query=document.getElementById('history-search').value.toLowerCase(),device=document.getElementById('device-filter').value,action=document.getElementById('action-filter').value;let rows=(state.history||[]).map(x=>({...x,device:normalizeDevice(x.device||x.topic||''),action:normalizeAction(x.action||x.command||'')})).filter(x=>(device==='all'||x.device===device)&&(action==='all'||x.action===action)&&(!query||JSON.stringify(x).toLowerCase().includes(query)));const total=rows.length,pages=Math.max(1,Math.ceil(total/state.pageSize));state.historyPage=Math.min(state.historyPage,pages);const start=(state.historyPage-1)*state.pageSize;rows=rows.slice(start,start+state.pageSize);document.getElementById('history-body').innerHTML=rows.map((x,i)=>`<tr><td>${start+i+1}</td><td>${x.device||'Thiết bị'}</td><td><span class="tag">${x.action||'--'}</span></td><td>Thành công</td><td>${fmtDate(x.time||x.createdAt||x.timestamp)}</td></tr>`).join('')||'<tr><td colspan="5">Chưa có lịch sử hoạt động</td></tr>';document.getElementById('history-count').textContent=`Hiển thị ${rows.length} trên ${total} kết quả`;renderPager('history',pages)}
+function normalizeDevice(v){const s=String(v).toLowerCase();if(s.includes('light')||s.includes('den')||s.includes('đèn'))return 'Đèn chiếu sáng';if(s.includes('fan')||s.includes('quat')||s.includes('quạt'))return 'Quạt thông gió';if(s.includes('air')||s.includes('ac')||s.includes('hoa')||s.includes('điều'))return 'Điều hòa không khí';return v}
+function normalizeAction(v){const s=String(v).toLowerCase();return s.includes('on')||s.includes('bật')?'BẬT':s.includes('off')||s.includes('tắt')?'TẮT':v}
+function renderPager(type,pages){
+    const page=type==='sensor'?state.sensorPage:state.historyPage;
+    const box=document.querySelector(`#${type} .table-footer div`);
+    const items=[];
+    items.push(`<button class="page-btn" data-p="prev" ${page===1?'disabled':''}>Trước</button>`);
+
+    const addPage=(n)=>items.push(`<button class="page-btn ${n===page?'selected':''}" data-p="${n}">${n}</button>`);
+    const addDots=()=>items.push('<span class="page-dots">...</span>');
+
+    if(pages<=3){
+        for(let n=1;n<=pages;n++) addPage(n);
+    }else if(page<=3){
+        addPage(1);addPage(2);addPage(3);addDots();addPage(pages);
+    }else if(page>=pages-2){
+        addPage(1);addDots();
+        for(let n=pages-2;n<=pages;n++) addPage(n);
+    }else{
+        addPage(1);addDots();addPage(page);addDots();addPage(pages);
+    }
+
+    items.push(`<button class="page-btn" data-p="next" ${page===pages?'disabled':''}>Sau</button>`);
+    box.innerHTML=items.join('');
+    box.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+        let n=b.dataset.p==='prev'?page-1:b.dataset.p==='next'?page+1:Number(b.dataset.p);
+        n=Math.max(1,Math.min(pages,n));
+        if(type==='sensor')state.sensorPage=n;else state.historyPage=n;
+        type==='sensor'?renderSensorTable():renderHistory();
+    });
+}
+function renderChart(){const vals=state.chart;if(!vals.length)return;const width=700,height=280,top=20,bottom=260;const x=i=>vals.length===1?0:i*(width/(vals.length-1));const y=(v,max)=>bottom-(Math.max(0,Math.min(Number(v)||0,max))/max)*(bottom-top);document.getElementById('temp-line').setAttribute('points',vals.map((d,i)=>`${x(i)},${y(d.temperature,50)}`).join(' '));document.getElementById('humidity-line').setAttribute('points',vals.map((d,i)=>`${x(i)},${y(d.humidity,100)}`).join(' '));document.getElementById('light-line').setAttribute('points',vals.map((d,i)=>`${x(i)},${y(d.light,1000)}`).join(' '));const labels=document.getElementById('chart-labels');if(labels)labels.innerHTML=vals.map(d=>`<span>${new Date(d.recordedAt).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})}</span>`).join('')}
+function setupProfile(){const keys=['github','figma','swagger','pdf'];keys.forEach(k=>{const input=document.getElementById(k+'-link'),a=document.getElementById(k+'-open');input.value=localStorage.getItem('link-'+k)||'';a.href=input.value||'#';input.oninput=()=>{localStorage.setItem('link-'+k,input.value);a.href=input.value||'#'}});const avatar=localStorage.getItem('profileAvatar');if(avatar)document.getElementById('avatar').style.backgroundImage=`url(${avatar})`;document.getElementById('avatar-input').onchange=e=>{const f=e.target.files[0];if(!f)return;const reader=new FileReader();reader.onload=()=>{localStorage.setItem('profileAvatar',reader.result);document.getElementById('avatar').style.backgroundImage=`url(${reader.result})`;document.getElementById('avatar').textContent=''};reader.readAsDataURL(f)}}
+loadSaved();setupProfile();loadSensors();loadDevices();loadHistory();setInterval(loadSensors,2000);setInterval(loadDevices,3000);setInterval(loadHistory,5000);
+document.getElementById('sensor-search').oninput=()=>{state.sensorPage=1;renderSensorTable()};document.getElementById('sensor-filter').onchange=()=>{state.sensorPage=1;renderSensorTable()};document.getElementById('sensor-date').onchange=()=>{state.sensorPage=1;renderSensorTable()};document.getElementById('history-search').oninput=()=>{state.historyPage=1;renderHistory()};document.getElementById('device-filter').onchange=()=>{state.historyPage=1;renderHistory()};document.getElementById('action-filter').onchange=()=>{state.historyPage=1;renderHistory()};
