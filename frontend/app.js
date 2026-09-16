@@ -26,23 +26,14 @@ function renderPager(type,pages){
     const page=type==='sensor'?state.sensorPage:state.historyPage;
     const box=document.querySelector(`#${type} .table-footer div`);
     const items=[];
-    items.push(`<button class="page-btn" data-p="prev" ${page===1?'disabled':''}>Trước</button>`);
+    items.push(`<button class="page-btn pager-nav" data-p="prev" ${page===1?'disabled':''}>‹&nbsp; Trước</button>`);
 
     const addPage=(n)=>items.push(`<button class="page-btn ${n===page?'selected':''}" data-p="${n}">${n}</button>`);
-    const addDots=()=>items.push('<span class="page-dots">...</span>');
+    const start=Math.max(1,Math.min(page-2,pages-4));
+    const end=Math.min(pages,start+4);
+    for(let n=start;n<=end;n++) addPage(n);
 
-    if(pages<=3){
-        for(let n=1;n<=pages;n++) addPage(n);
-    }else if(page<=3){
-        addPage(1);addPage(2);addPage(3);addDots();addPage(pages);
-    }else if(page>=pages-2){
-        addPage(1);addDots();
-        for(let n=pages-2;n<=pages;n++) addPage(n);
-    }else{
-        addPage(1);addDots();addPage(page);addDots();addPage(pages);
-    }
-
-    items.push(`<button class="page-btn" data-p="next" ${page===pages?'disabled':''}>Sau</button>`);
+    items.push(`<button class="page-btn pager-nav" data-p="next" ${page===pages?'disabled':''}>Tiếp theo&nbsp; ›</button>`);
     box.innerHTML=items.join('');
     box.querySelectorAll('button').forEach(b=>b.onclick=()=>{
         let n=b.dataset.p==='prev'?page-1:b.dataset.p==='next'?page+1:Number(b.dataset.p);
@@ -52,6 +43,6 @@ function renderPager(type,pages){
     });
 }
 function renderChart(){const vals=state.chart;if(!vals.length)return;const width=700,height=280,top=20,bottom=260;const x=i=>vals.length===1?0:i*(width/(vals.length-1));const y=(v,max)=>bottom-(Math.max(0,Math.min(Number(v)||0,max))/max)*(bottom-top);document.getElementById('temp-line').setAttribute('points',vals.map((d,i)=>`${x(i)},${y(d.temperature,50)}`).join(' '));document.getElementById('humidity-line').setAttribute('points',vals.map((d,i)=>`${x(i)},${y(d.humidity,100)}`).join(' '));document.getElementById('light-line').setAttribute('points',vals.map((d,i)=>`${x(i)},${y(d.light,1000)}`).join(' '));const labels=document.getElementById('chart-labels');if(labels)labels.innerHTML=vals.map(d=>`<span>${new Date(d.recordedAt).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})}</span>`).join('')}
-function setupProfile(){const keys=['github','figma','swagger','pdf'];keys.forEach(k=>{const input=document.getElementById(k+'-link'),a=document.getElementById(k+'-open');input.value=localStorage.getItem('link-'+k)||'';a.href=input.value||'#';input.oninput=()=>{localStorage.setItem('link-'+k,input.value);a.href=input.value||'#'}});const avatar=localStorage.getItem('profileAvatar');if(avatar)document.getElementById('avatar').style.backgroundImage=`url(${avatar})`;document.getElementById('avatar-input').onchange=e=>{const f=e.target.files[0];if(!f)return;const reader=new FileReader();reader.onload=()=>{localStorage.setItem('profileAvatar',reader.result);document.getElementById('avatar').style.backgroundImage=`url(${reader.result})`;document.getElementById('avatar').textContent=''};reader.readAsDataURL(f)}}
+function setupProfile(){const defaults={github:'https://github.com/nguyenngochuyenyl-netizen/IoT_B23DCAT141',figma:'https://www.figma.com/design/E3a787gWoQHXL7GJlE7Yaa/Untitled?node-id=0-1&t=Afk8LB8zL2g54lrI-1',swagger:'',pdf:''};const keys=['github','figma','swagger','pdf'];keys.forEach(k=>{const input=document.getElementById(k+'-link'),a=document.getElementById(k+'-open');input.value=localStorage.getItem('link-'+k)||defaults[k];if(input.value)localStorage.setItem('link-'+k,input.value);a.href=input.value||'#';input.oninput=()=>{localStorage.setItem('link-'+k,input.value);a.href=input.value||'#'}});const avatar=localStorage.getItem('profileAvatar');if(avatar)document.getElementById('avatar').style.backgroundImage=`url(${avatar})`;document.getElementById('avatar-input').onchange=e=>{const f=e.target.files[0];if(!f)return;const reader=new FileReader();reader.onload=()=>{localStorage.setItem('profileAvatar',reader.result);document.getElementById('avatar').style.backgroundImage=`url(${reader.result})`;document.getElementById('avatar').textContent=''};reader.readAsDataURL(f)}}
 loadSaved();setupProfile();loadSensors();loadDevices();loadHistory();setInterval(loadSensors,2000);setInterval(loadDevices,3000);setInterval(loadHistory,5000);
 document.getElementById('sensor-search').oninput=()=>{state.sensorPage=1;renderSensorTable()};document.getElementById('sensor-filter').onchange=()=>{state.sensorPage=1;renderSensorTable()};document.getElementById('sensor-date').onchange=()=>{state.sensorPage=1;renderSensorTable()};document.getElementById('history-search').oninput=()=>{state.historyPage=1;renderHistory()};document.getElementById('device-filter').onchange=()=>{state.historyPage=1;renderHistory()};document.getElementById('action-filter').onchange=()=>{state.historyPage=1;renderHistory()};
